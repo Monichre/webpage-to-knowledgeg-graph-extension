@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Knowledge Graph</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header id="header">
+      <div class="header-left">
+        <div class="logo">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8A969B" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <circle cx="4" cy="6" r="2"/>
+            <circle cx="20" cy="6" r="2"/>
+            <circle cx="4" cy="18" r="2"/>
+            <circle cx="20" cy="18" r="2"/>
+            <line x1="6" y1="6" x2="10" y2="10"/>
+            <line x1="18" y1="6" x2="14" y2="10"/>
+            <line x1="6" y1="18" x2="10" y2="14"/>
+            <line x1="18" y1="18" x2="14" y2="14"/>
+          </svg>
+        </div>
+        <span class="header-title">Knowledge Graph</span>
+      </div>
+      <div class="header-right">
+        <button id="settingsBtn" class="icon-btn" title="Settings">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Page Info -->
+    <div id="pageInfo" class="section">
+      <div class="page-url" id="pageUrl">Loading...</div>
+      <div class="page-title" id="pageTitle"></div>
+    </div>
+
+    <!-- Tab Navigation -->
+    <nav id="tabs">
+      <button class="tab active" data-tab="extract">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+        </svg>
+        Extract
+      </button>
+      <button class="tab" data-tab="graph">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <circle cx="4" cy="6" r="2"/>
+          <circle cx="20" cy="18" r="2"/>
+          <line x1="6" y1="7" x2="10" y2="10"/>
+          <line x1="14" y1="14" x2="18" y2="17"/>
+        </svg>
+        Graph
+      </button>
+      <button class="tab" data-tab="manage">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7"/>
+          <rect x="14" y="3" width="7" height="7"/>
+          <rect x="3" y="14" width="7" height="7"/>
+          <rect x="14" y="14" width="7" height="7"/>
+        </svg>
+        Manage
+      </button>
+    </nav>
+
+    <!-- Extract Panel -->
+    <div id="extractPanel" class="panel active">
+      <div class="extract-config">
+        <div class="config-row">
+          <label class="result-label" for="extractModeSelect">Extraction Mode</label>
+          <select id="extractModeSelect" class="select">
+            <option value="fullPage">Full Document (Auto-scroll)</option>
+            <option value="standard">Standard (Main Article/Body)</option>
+            <option value="chatTranscript">Chat Transcript (Heuristic)</option>
+          </select>
+        </div>
+        <div class="config-row config-row-split">
+          <div>
+            <label class="result-label" for="scrollMaxPasses">Max Passes</label>
+            <input id="scrollMaxPasses" class="input" type="number" min="3" max="60" value="24">
+          </div>
+          <div>
+            <label class="result-label" for="scrollWaitMs">Wait (ms)</label>
+            <input id="scrollWaitMs" class="input" type="number" min="100" max="2000" value="450">
+          </div>
+          <div>
+            <label class="result-label" for="scrollTimeoutMs">Timeout (ms)</label>
+            <input id="scrollTimeoutMs" class="input" type="number" min="3000" max="60000" value="20000">
+          </div>
+        </div>
+      </div>
+
+      <div class="extract-actions">
+        <button id="extractBtn" class="btn-primary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+          </svg>
+          Extract Page Content
+        </button>
+      </div>
+
+      <div id="extractStatus" class="status hidden">
+        <div class="status-icon">
+          <div class="spinner"></div>
+        </div>
+        <span class="status-text">Extracting...</span>
+      </div>
+
+      <div id="extractResult" class="hidden">
+        <div class="result-header">
+          <span class="result-label">Extracted Markdown</span>
+          <button id="copyMarkdownBtn" class="text-btn">Copy</button>
+        </div>
+        <pre id="markdownOutput" class="markdown-output"></pre>
+        <div id="extractWarnings" class="extract-warning hidden"></div>
+
+        <div class="result-header mt-3">
+          <span class="result-label">Add to Graph</span>
+        </div>
+        <div class="graph-selector">
+          <select id="graphSelect" class="select">
+            <option value="">Select a graph...</option>
+          </select>
+          <button id="newGraphBtn" class="icon-btn" title="Create new graph">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+          </button>
+        </div>
+        <button id="addToGraphBtn" class="btn-primary mt-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
+            <path d="M12 8v8M8 12h8"/>
+          </svg>
+          Analyze & Add to Graph
+        </button>
+      </div>
+    </div>
+
+    <!-- Graph Panel -->
+    <div id="graphPanel" class="panel">
+      <div id="graphContainer" class="graph-container">
+        <canvas id="graphCanvas"></canvas>
+      </div>
+      <div id="graphStats" class="graph-stats">
+        <span id="nodeCount">0 nodes</span>
+        <span class="divider">|</span>
+        <span id="edgeCount">0 edges</span>
+      </div>
+      <div id="nodeDetail" class="node-detail hidden">
+        <div class="node-detail-header">
+          <div class="node-type-badge" id="nodeTypeBadge">topic</div>
+          <button id="closeDetailBtn" class="icon-btn">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <h3 id="nodeLabel" class="node-label"></h3>
+        <p id="nodeDescription" class="node-description"></p>
+        <div id="nodeConnections" class="node-connections"></div>
+      </div>
+    </div>
+
+    <!-- Manage Panel -->
+    <div id="managePanel" class="panel">
+      <div class="manage-header">
+        <input type="text" id="newGraphInput" class="input" placeholder="New graph name...">
+        <button id="createGraphBtn" class="btn-primary btn-sm">Create</button>
+      </div>
+      <div id="graphList" class="graph-list"></div>
+
+      <div class="sources-section">
+        <div class="sources-section-header">
+          <span class="result-label" id="sourcesGraphTitle">Sources</span>
+        </div>
+        <div id="sourcesEmpty" class="sources-empty hidden">No sources recorded yet. Extract a page and add it to this graph.</div>
+        <div id="sourcesList" class="sources-list"></div>
+      </div>
+    </div>
+
+    <!-- Settings Panel -->
+    <div id="settingsPanel" class="panel">
+      <h3 class="settings-title">Settings</h3>
+      <div class="setting-item">
+        <label class="setting-label">AI Routing</label>
+        <select id="aiRoutingSelect" class="select">
+          <option value="openrouter">OpenRouter (recommended)</option>
+          <option value="aiGateway">AI Gateway (OpenAI-compatible)</option>
+          <option value="direct">Direct Provider API</option>
+        </select>
+      </div>
+      <div class="setting-item">
+        <label class="setting-label">AI Provider</label>
+        <select id="aiProviderSelect" class="select">
+          <option value="gemini">Gemini</option>
+          <option value="openai">ChatGPT</option>
+          <option value="anthropic">Sonnet</option>
+          <option value="minimax">MiniMax</option>
+        </select>
+      </div>
+      <div class="setting-item">
+        <label class="setting-label">AI Model</label>
+        <select id="aiModelSelect" class="select"></select>
+      </div>
+      <div class="setting-item">
+        <label class="setting-label">Provider API Key</label>
+        <input type="password" id="apiKeyInput" class="input" placeholder="Enter API key for AI extraction...">
+      </div>
+      <div class="setting-item">
+        <label class="setting-label">Gateway Base URL</label>
+        <input type="text" id="gatewayBaseUrlInput" class="input" placeholder="https://your-gateway.example.com/v1">
+        <button id="saveApiKeyBtn" class="btn-primary btn-sm mt-1">Save Key</button>
+        <p class="setting-hint">API key is stored for the current browser session only. Use OpenRouter for quickest multi-model setup, or set an OpenAI-compatible AI Gateway URL.</p>
+      </div>
+      <div class="setting-item">
+        <label class="setting-label">
+          <input type="checkbox" id="autoExtractToggle"> Auto-extract on page load
+        </label>
+      </div>
+      <button id="exportAllBtn" class="btn-outline mt-3">Export All Graphs</button>
+      <button id="importBtn" class="btn-outline mt-1">Import Graphs</button>
+      <input type="file" id="importFile" accept=".json" class="hidden">
+    </div>
+
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

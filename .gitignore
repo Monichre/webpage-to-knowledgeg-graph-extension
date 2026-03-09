@@ -1,0 +1,36 @@
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Editor / IDE
+.vscode/
+.idea/
+*.iml
+
+# Node / JavaScript tooling (future-proof)
+node_modules/
+dist/
+build/
+coverage/
+.parcel-cache/
+.turbo/
+.next/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# Environment / secrets
+.env
+.env.*
+.env.local
+.env.development.local
+.env.production.local
+.env.test.local
+
+# Tooling / caches
+.cache/
+.cursor/
+*.tmp
+
