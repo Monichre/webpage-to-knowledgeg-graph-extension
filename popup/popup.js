@@ -81,12 +81,15 @@
   let settings = { ...DEFAULT_SETTINGS };
   let currentTab = 'extract';
 
-  // Node colors by type — monochrome cool grays
+  // Node colors by type
   const NODE_COLORS = {
-    topic:       '#6B8A9B',
-    entity:      '#8A7A7B',
-    association: '#8A969B',
-    concept:     '#6B8A7B',
+    person:       '#8A7A9B',  // Purple for people
+    organization: '#6B8A9B',  // Blue for organizations
+    location:     '#6B9B8A',  // Teal for locations
+    concept:      '#8A969B',  // Gray for concepts
+    event:        '#9B8A6B',  // Gold for events
+    technology:   '#7B8A9B',  // Steel blue for technology
+    topic:        '#6B8A7B',  // Green for topics
   };
 
   function sanitizeText(value, maxLength = 200) {
@@ -99,7 +102,8 @@
   }
 
   function sanitizeNodeType(value) {
-    return ['topic', 'entity', 'association', 'concept'].includes(value) ? value : 'concept';
+    const validTypes = ['person', 'organization', 'location', 'concept', 'event', 'technology', 'topic'];
+    return validTypes.includes(value) ? value : 'concept';
   }
 
   function sanitizeBaseUrl(value) {
@@ -225,6 +229,13 @@
           description: sanitizeText(node.description, 400),
           sourceUrl: typeof node.sourceUrl === 'string' ? node.sourceUrl : '',
           sourceTitle: sanitizeText(node.sourceTitle, 200),
+          // Preserve new metadata fields
+          aliases: Array.isArray(node.aliases)
+            ? node.aliases.map(a => sanitizeText(a, 120)).filter(Boolean).slice(0, 10)
+            : [],
+          confidence: typeof node.confidence === 'number'
+            ? Math.max(0, Math.min(1, node.confidence))
+            : 0.8,
         };
         nodeIdMap.set(node.id, id);
         return normalizedNode;
@@ -244,6 +255,11 @@
           target: mappedTarget,
           relationship: sanitizeText(edge.relationship, 80) || 'related to',
           weight: typeof edge.weight === 'number' ? Math.max(0, Math.min(1, edge.weight)) : 0.7,
+          // Preserve new metadata fields
+          confidence: typeof edge.confidence === 'number'
+            ? Math.max(0, Math.min(1, edge.confidence))
+            : (typeof edge.weight === 'number' ? edge.weight : 0.7),
+          bidirectional: !!edge.bidirectional,
         };
       })
       .filter(Boolean);
@@ -447,18 +463,41 @@
       }
     }
 
-    const matchArray = Array.from(matches).slice(0, 25);
-    const techTerms = ['API', 'AI', 'ML', 'NLP', 'GPU', 'CPU', 'SDK', 'REST', 'HTTP', 'SQL', 'CSS', 'HTML', 'JavaScript', 'Python', 'React', 'Database', 'Server', 'Framework', 'Algorithm', 'Model', 'Network', 'System', 'Platform', 'Software', 'Data', 'Cloud', 'Machine Learning', 'Deep Learning'];
+    const matchArray = Array.from(matches).slice(0, 30);
+
+    // Enhanced heuristics for entity type classification
+    const techTerms = ['API', 'AI', 'ML', 'NLP', 'GPU', 'CPU', 'SDK', 'REST', 'HTTP', 'SQL', 'CSS', 'HTML', 'JavaScript', 'Python', 'React', 'Database', 'Server', 'Framework', 'Algorithm', 'Model', 'Network', 'System', 'Platform', 'Software', 'Data', 'Cloud', 'Machine Learning', 'Deep Learning', 'Blockchain', 'Docker', 'Kubernetes'];
+    const orgIndicators = ['Inc', 'Corp', 'LLC', 'Ltd', 'Company', 'Foundation', 'Institute', 'University', 'Department', 'Agency'];
+    const locationIndicators = ['City', 'State', 'Country', 'County', 'Province', 'District', 'Region', 'Valley', 'Bay', 'Island', 'Mountain'];
 
     matchArray.forEach((label, i) => {
       const id = generateId();
-      let type = 'concept';
-      if (techTerms.some(t => label.toLowerCase().includes(t.toLowerCase()))) type = 'topic';
-      else if (i < matchArray.length * 0.3) type = 'topic';
-      else if (i < matchArray.length * 0.6) type = 'entity';
-      else if (label.split(' ').length >= 3) type = 'association';
+      let type = 'concept'; // default
 
-      nodes.push({ id, label, type, description: '' });
+      // Classify by heuristics
+      if (techTerms.some(t => label.toLowerCase().includes(t.toLowerCase()))) {
+        type = 'technology';
+      } else if (orgIndicators.some(ind => label.includes(ind))) {
+        type = 'organization';
+      } else if (locationIndicators.some(ind => label.includes(ind))) {
+        type = 'location';
+      } else if (label.split(' ').length === 2 && /^[A-Z][a-z]+ [A-Z][a-z]+$/.test(label)) {
+        // Two capitalized words might be a person
+        type = 'person';
+      } else if (i < matchArray.length * 0.2) {
+        type = 'topic';
+      } else if (label.split(' ').length >= 3) {
+        type = 'concept';
+      }
+
+      nodes.push({
+        id,
+        label,
+        type,
+        description: '',
+        aliases: [],
+        confidence: 0.6, // Lower confidence for local extraction
+      });
       nodeMap.set(label, id);
     });
 
@@ -475,14 +514,22 @@
             const sid = nodeMap.get(found[i]);
             const tid = nodeMap.get(found[j]);
             if (sid && tid) {
-              edges.push({ id: generateId(), source: sid, target: tid, relationship: 'related to', weight: 0.7 });
+              edges.push({
+                id: generateId(),
+                source: sid,
+                target: tid,
+                relationship: 'related to',
+                confidence: 0.5,
+                bidirectional: true,
+                weight: 0.5,
+              });
             }
           }
         }
       }
     });
 
-    return { nodes, edges };
+    return { nodes, edges, warnings: ['Used local extraction (no AI configured)'] };
   }
 
   // Maximum characters sent to the AI per chunk.
@@ -509,29 +556,67 @@
 
   function buildKnowledgePrompt(text) {
     const safeText = truncateAtSentence(text, AI_CONTENT_CHAR_LIMIT);
-    return `You are a knowledge graph extraction engine. Analyze the webpage content below and extract a structured knowledge graph.
+    return `You are an expert knowledge graph extraction system. Analyze the content below and extract a high-quality, structured knowledge graph with entities, relationships, and metadata.
 
-Return a single JSON object — no markdown fences, no explanation — with exactly this shape:
+Return a single JSON object — no markdown fences, no explanation — with exactly this structure:
+
 {
   "nodes": [
-    { "label": "string (concise noun phrase)", "type": "topic|entity|association|concept", "description": "1-2 sentence description" }
+    {
+      "label": "string (canonical name - use full, unambiguous form)",
+      "type": "person|organization|location|concept|event|technology|topic",
+      "description": "string (1-2 detailed sentences explaining this entity)",
+      "aliases": ["array", "of", "alternative names or synonyms"],
+      "confidence": number (0.0-1.0, how confident you are this is a distinct entity)
+    }
   ],
   "edges": [
-    { "sourceLabel": "exact node label", "targetLabel": "exact node label", "relationship": "verb phrase describing the connection" }
+    {
+      "sourceLabel": "exact node label (must match a node's label field)",
+      "targetLabel": "exact node label (must match a node's label field)",
+      "relationship": "specific verb phrase describing the relationship",
+      "confidence": number (0.0-1.0, confidence in this relationship),
+      "bidirectional": boolean (true if relationship works both ways)
+    }
   ]
 }
 
-Node type guide:
-- topic: a subject domain or main theme (e.g. "Machine Learning", "Climate Policy")
-- entity: a specific named thing — person, org, product, place (e.g. "OpenAI", "Elon Musk")
-- concept: an abstract idea or principle (e.g. "Overfitting", "Supply and Demand")
-- association: a grouping, category, or relationship concept (e.g. "Neural Network Architecture")
+**Entity Type Definitions:**
+- person: Named individuals (e.g. "Tim Berners-Lee", "Marie Curie")
+- organization: Companies, institutions, groups (e.g. "OpenAI", "United Nations", "MIT")
+- location: Geographic places (e.g. "San Francisco", "Amazon Rainforest")
+- concept: Abstract ideas, theories, principles (e.g. "Photosynthesis", "Supply and Demand", "Recursion")
+- event: Specific occurrences, milestones (e.g. "Apollo 11 Moon Landing", "Industrial Revolution")
+- technology: Tools, systems, platforms, methods (e.g. "React Framework", "CRISPR", "Blockchain")
+- topic: Subject domains, fields of study (e.g. "Machine Learning", "Quantum Physics", "Economics")
 
-Rules:
-- Extract 8–25 nodes. Prefer quality over quantity.
-- Every edge sourceLabel and targetLabel must exactly match a node label.
-- Relationship strings should be specific verb phrases (e.g. "trained on", "acquired by", "defines").
-- Return only the JSON object. No other text.
+**Extraction Guidelines:**
+
+1. **Entity Resolution**: Use canonical, unambiguous names. If "NASA" and "National Aeronautics and Space Administration" appear, choose one as the label and list the other in aliases.
+
+2. **Quality over Quantity**: Extract 10-30 of the MOST important entities. Focus on:
+   - Central topics and themes
+   - Key people, organizations, or places mentioned multiple times
+   - Core concepts that are explained or defined
+   - Avoid trivial mentions
+
+3. **Relationship Quality**: Create relationships that are:
+   - Specific and informative (prefer "founded in 1998" over "related to")
+   - Factually grounded in the text
+   - Semantically meaningful (avoid generic "related to" when possible)
+   - Examples: "developed by", "located in", "specializes in", "invented", "acquired", "based on"
+
+4. **Confidence Scoring**:
+   - 0.9-1.0: Explicitly stated, unambiguous
+   - 0.7-0.89: Clearly implied or strongly supported
+   - 0.5-0.69: Reasonably inferred from context
+   - Below 0.5: Uncertain or speculative
+
+5. **Aliases**: Include common abbreviations, acronyms, alternative names, or synonyms that appear in the text.
+
+6. **Validation**: Every edge must connect two nodes that exist in the nodes array using exact label matches.
+
+Return ONLY the JSON object. No other text.
 
 Content:
 ${safeText}`;
@@ -559,21 +644,37 @@ ${safeText}`;
     }
 
     const nodeMap = new Map();
-    // Build a case-insensitive lookup so edge resolution is tolerant
+    // Build case-insensitive lookup and alias map for entity resolution
     const nodeMapLower = new Map();
+    const aliasMap = new Map(); // Maps aliases to canonical node ID
 
     const nodes = (parsed.nodes || [])
       .map((node) => {
         const label = sanitizeText(node.label, 120);
         if (!label) return null;
         const id = generateId();
+
+        // Store main label mapping
         nodeMap.set(label, id);
         nodeMapLower.set(label.toLowerCase(), id);
+
+        // Store alias mappings for entity resolution
+        const aliases = Array.isArray(node.aliases)
+          ? node.aliases.map(a => sanitizeText(a, 120)).filter(Boolean).slice(0, 10)
+          : [];
+        aliases.forEach(alias => {
+          aliasMap.set(alias.toLowerCase(), id);
+        });
+
         return {
           id,
           label,
           type: sanitizeNodeType(node.type),
           description: sanitizeText(node.description, 300),
+          aliases,
+          confidence: typeof node.confidence === 'number'
+            ? Math.max(0, Math.min(1, node.confidence))
+            : 0.8,
         };
       })
       .filter(Boolean);
@@ -583,23 +684,53 @@ ${safeText}`;
       .map((edge) => {
         const srcLabel = sanitizeText(edge.sourceLabel, 120);
         const tgtLabel = sanitizeText(edge.targetLabel, 120);
-        const sid = nodeMap.get(srcLabel) || nodeMapLower.get(srcLabel.toLowerCase());
-        const tid = nodeMap.get(tgtLabel) || nodeMapLower.get(tgtLabel.toLowerCase());
+
+        // Try exact match first, then case-insensitive, then alias lookup
+        let sid = nodeMap.get(srcLabel)
+          || nodeMapLower.get(srcLabel.toLowerCase())
+          || aliasMap.get(srcLabel.toLowerCase());
+        let tid = nodeMap.get(tgtLabel)
+          || nodeMapLower.get(tgtLabel.toLowerCase())
+          || aliasMap.get(tgtLabel.toLowerCase());
+
         if (!sid || !tid || sid === tid) return null;
+
         const key = `${sid}|${tid}`;
         if (edgeSet.has(key)) return null;
         edgeSet.add(key);
+
         return {
           id: generateId(),
           source: sid,
           target: tid,
           relationship: sanitizeText(edge.relationship, 80) || 'related to',
-          weight: 0.8,
+          confidence: typeof edge.confidence === 'number'
+            ? Math.max(0, Math.min(1, edge.confidence))
+            : 0.7,
+          bidirectional: !!edge.bidirectional,
+          weight: typeof edge.confidence === 'number' ? edge.confidence : 0.7,
         };
       })
       .filter(Boolean);
 
-    return { nodes, edges, warnings: [] };
+    // Calculate quality metrics
+    const avgNodeConfidence = nodes.length > 0
+      ? nodes.reduce((sum, n) => sum + n.confidence, 0) / nodes.length
+      : 0;
+    const avgEdgeConfidence = edges.length > 0
+      ? edges.reduce((sum, e) => sum + e.confidence, 0) / edges.length
+      : 0;
+
+    return {
+      nodes,
+      edges,
+      warnings: [],
+      metrics: {
+        avgNodeConfidence: Math.round(avgNodeConfidence * 100) / 100,
+        avgEdgeConfidence: Math.round(avgEdgeConfidence * 100) / 100,
+        totalAliases: nodes.reduce((sum, n) => sum + (n.aliases?.length || 0), 0),
+      }
+    };
   }
 
   async function runGeminiExtraction(text, apiKey, modelId) {
@@ -813,7 +944,26 @@ ${safeText}`;
     btn.disabled = false;
     btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M12 8v8M8 12h8"/></svg> Analyze & Add to Graph`;
     renderSourcesForGraph(graphs.find((g) => g.id === graphId) || null);
-    showToast(`Added ${result.nodes.length} entities and ${result.edges.length} relationships`);
+
+    // Build success message with quality metrics
+    let message = `Added ${result.nodes.length} entities and ${result.edges.length} relationships`;
+    if (result.metrics) {
+      const metricsDetails = [];
+      if (result.metrics.avgNodeConfidence) {
+        metricsDetails.push(`Node confidence: ${(result.metrics.avgNodeConfidence * 100).toFixed(0)}%`);
+      }
+      if (result.metrics.avgEdgeConfidence) {
+        metricsDetails.push(`Edge confidence: ${(result.metrics.avgEdgeConfidence * 100).toFixed(0)}%`);
+      }
+      if (result.metrics.totalAliases > 0) {
+        metricsDetails.push(`${result.metrics.totalAliases} aliases resolved`);
+      }
+      if (metricsDetails.length > 0) {
+        message += ` • ` + metricsDetails.join(' • ');
+      }
+    }
+    showToast(message);
+
     if (Array.isArray(result.warnings) && result.warnings.length > 0) {
       showToast(result.warnings[0]);
     }
